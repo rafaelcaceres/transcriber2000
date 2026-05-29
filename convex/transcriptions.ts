@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 export const generateUploadUrl = mutation(async (ctx) => {
@@ -11,12 +11,14 @@ export const createTranscription = mutation({
     fileName: v.string(),
     fileId: v.id("_storage"),
     mimeType: v.string(),
+    durationSeconds: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const id = await ctx.db.insert("transcriptions", {
       fileName: args.fileName,
       fileId: args.fileId,
       mimeType: args.mimeType,
+      durationSeconds: args.durationSeconds,
       status: "processing",
     });
 
@@ -27,6 +29,7 @@ export const createTranscription = mutation({
       fileId: args.fileId,
       fileName: args.fileName,
       mimeType: args.mimeType,
+      durationSeconds: args.durationSeconds,
     });
 
     return id;
@@ -45,10 +48,22 @@ export const updateTranscription = mutation({
       v.literal("error")
     ),
     errorMessage: v.optional(v.string()),
+    activeRunId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;
     await ctx.db.patch(id, updates);
+  },
+});
+
+// Lightweight read of the fields the processing chain uses to decide whether it
+// still owns the row (cheaper than getTranscription, which also signs a URL).
+export const getControl = internalQuery({
+  args: { id: v.id("transcriptions") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row) return null;
+    return { status: row.status, activeRunId: row.activeRunId };
   },
 });
 

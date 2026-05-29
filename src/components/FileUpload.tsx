@@ -31,6 +31,28 @@ function uploadWithProgress(
   });
 }
 
+// Read the media duration (seconds) straight from the browser — no ffmpeg
+// needed server-side. The action uses it to slice the transcription into time
+// windows. Resolves undefined if the format doesn't expose a finite duration
+// (e.g. some streamed webm), in which case the server falls back to probing.
+function getMediaDuration(file: File): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = document.createElement(
+      file.type.startsWith("video/") ? "video" : "audio"
+    );
+    el.preload = "metadata";
+    const done = (value: number | undefined) => {
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    el.onloadedmetadata = () =>
+      done(Number.isFinite(el.duration) && el.duration > 0 ? el.duration : undefined);
+    el.onerror = () => done(undefined);
+    el.src = url;
+  });
+}
+
 interface FileUploadProps {
   onUploadComplete: (transcriptionId: string) => void;
 }
@@ -81,6 +103,8 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
       setIsUploading(true);
 
       try {
+        // Read duration in parallel with the upload — it never blocks it.
+        const durationPromise = getMediaDuration(file);
         const uploadUrl = await generateUploadUrl();
 
         const { storageId } = await uploadWithProgress(uploadUrl, file, (f) =>
@@ -91,6 +115,7 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
           fileName: file.name,
           fileId: storageId as Id<"_storage">,
           mimeType: file.type,
+          durationSeconds: await durationPromise,
         });
 
         onUploadComplete(transcriptionId);
