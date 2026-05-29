@@ -30,3 +30,6 @@ dist-ssr
 
 # Convex
 .convex
+.vercel
+
+DEPLOY.md

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 export const generateUploadUrl = mutation(async (ctx) => {
   return await ctx.storage.generateUploadUrl();
@@ -18,6 +19,16 @@ export const createTranscription = mutation({
       mimeType: args.mimeType,
       status: "processing",
     });
+
+    // Kick off transcription in the background so it survives the user
+    // navigating away or closing the tab.
+    await ctx.scheduler.runAfter(0, internal.gemini.transcribeAudio, {
+      transcriptionId: id,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      mimeType: args.mimeType,
+    });
+
     return id;
   },
 });
@@ -26,6 +37,7 @@ export const updateTranscription = mutation({
   args: {
     id: v.id("transcriptions"),
     transcription: v.optional(v.string()),
+    progress: v.optional(v.number()),
     status: v.union(
       v.literal("uploading"),
       v.literal("processing"),

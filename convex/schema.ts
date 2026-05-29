@@ -7,6 +7,8 @@ export default defineSchema({
     fileId: v.id("_storage"),
     mimeType: v.string(),
     transcription: v.optional(v.string()),
+    // 0-100, reflects real upload/processing/streaming milestones.
+    progress: v.optional(v.number()),
     status: v.union(
       v.literal("uploading"),
       v.literal("processing"),

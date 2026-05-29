@@ -1,8 +1,35 @@
 import { useState, useCallback, useRef } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import { WaveformIcon } from "./WaveformIcon";
+import { ProgressBar } from "./ProgressBar";
+
+// POST the file with real upload progress (fetch can't report this).
+function uploadWithProgress(
+  url: string,
+  file: File,
+  onProgress: (fraction: number) => void
+): Promise<{ storageId: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        reject(new Error("Upload falhou"));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload falhou"));
+    xhr.send(file);
+  });
+}
 
 interface FileUploadProps {
   onUploadComplete: (transcriptionId: string) => void;
@@ -32,6 +59,7 @@ function formatSize(bytes: number) {
 export function FileUpload({ onUploadComplete }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,24 +77,19 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
       }
 
       setSelectedFile(file);
+      setUploadProgress(0);
       setIsUploading(true);
 
       try {
         const uploadUrl = await generateUploadUrl();
 
-        const response = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": file.type },
-          body: file,
-        });
-
-        if (!response.ok) throw new Error("Upload falhou");
-
-        const { storageId } = await response.json();
+        const { storageId } = await uploadWithProgress(uploadUrl, file, (f) =>
+          setUploadProgress(f * 100)
+        );
 
         const transcriptionId = await createTranscription({
           fileName: file.name,
-          fileId: storageId,
+          fileId: storageId as Id<"_storage">,
           mimeType: file.type,
         });
 
@@ -92,14 +115,20 @@ export function FileUpload({ onUploadComplete }: FileUploadProps) {
   );
 
   if (isUploading && selectedFile) {
+    const done = uploadProgress >= 100;
     return (
-      <div className="bg-surface border border-border rounded-xl p-14 text-center animate-fade-in">
-        <div className="flex justify-center mb-6">
+      <div className="bg-surface border border-border rounded-xl p-14 animate-fade-in">
+        <div className="flex justify-center mb-8">
           <WaveformIcon animate />
         </div>
-        <div className="text-sm font-mono text-muted">Enviando arquivo...</div>
-        <div className="text-xs font-mono text-muted/50 mt-2">
-          {selectedFile.name} · {formatSize(selectedFile.size)}
+        <div className="max-w-md mx-auto">
+          <ProgressBar
+            value={uploadProgress}
+            label={done ? "Finalizando envio..." : "Enviando arquivo..."}
+          />
+          <div className="text-xs font-mono text-muted/50 mt-4 text-center">
+            {selectedFile.name} · {formatSize(selectedFile.size)}
+          </div>
         </div>
       </div>
     );

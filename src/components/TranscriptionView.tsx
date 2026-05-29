@@ -1,9 +1,17 @@
-import { useQuery, useAction } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Copy, Download, CheckCircle, XCircle, ArrowLeft } from "lucide-react";
 import { WaveformIcon } from "./WaveformIcon";
+import { ProgressBar } from "./ProgressBar";
+
+function stageLabel(progress: number) {
+  if (progress < 8) return "Preparando arquivo...";
+  if (progress < 18) return "Enviando para o Gemini...";
+  if (progress < 45) return "Processando áudio...";
+  return "Transcrevendo...";
+}
 
 interface TranscriptionViewProps {
   transcriptionId: Id<"transcriptions">;
@@ -14,21 +22,7 @@ export function TranscriptionView({ transcriptionId, onBack }: TranscriptionView
   const transcription = useQuery(api.transcriptions.getTranscription, {
     id: transcriptionId,
   });
-  const transcribeAudio = useAction(api.gemini.transcribeAudio);
   const [copied, setCopied] = useState(false);
-  const startedRef = useRef(false);
-
-  useEffect(() => {
-    if (transcription && transcription.status === "processing" && !startedRef.current) {
-      startedRef.current = true;
-      transcribeAudio({
-        transcriptionId,
-        fileId: transcription.fileId,
-        fileName: transcription.fileName,
-        mimeType: transcription.mimeType,
-      });
-    }
-  }, [transcription, transcriptionId, transcribeAudio]);
 
   const handleCopy = async () => {
     if (transcription?.transcription) {
@@ -85,14 +79,30 @@ export function TranscriptionView({ transcriptionId, onBack }: TranscriptionView
 
       {/* Processing state */}
       {transcription.status === "processing" && (
-        <div className="bg-surface border border-border rounded-2xl p-16 text-center animate-fade-in">
+        <div className="bg-surface border border-border rounded-2xl p-12 animate-fade-in">
           <div className="flex justify-center mb-8">
             <WaveformIcon animate />
           </div>
-          <div className="text-base font-mono text-muted">Analisando áudio...</div>
-          <div className="text-sm font-mono text-muted/40 mt-3">
-            Isso pode levar alguns segundos
+          <div className="max-w-md mx-auto">
+            <ProgressBar
+              value={transcription.progress ?? 0}
+              label={stageLabel(transcription.progress ?? 0)}
+            />
+            <div className="text-sm font-mono text-muted/40 mt-5 text-center">
+              Áudios longos podem levar alguns minutos. Pode fechar a aba — a
+              transcrição continua em segundo plano.
+            </div>
           </div>
+
+          {/* Live preview of the transcript as it streams in */}
+          {transcription.transcription && (
+            <div className="mt-10 pt-8 border-t border-border">
+              <p className="text-sm leading-7 text-text-secondary/70 whitespace-pre-wrap font-light max-h-64 overflow-y-auto">
+                {transcription.transcription}
+                <span className="inline-block w-1.5 h-4 ml-0.5 -mb-0.5 bg-accent animate-pulse" />
+              </p>
+            </div>
+          )}
         </div>
       )}
 
